@@ -19,10 +19,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @PluginDescriptor(
@@ -56,6 +53,7 @@ public class CollectionLogPlusPlugin extends Plugin
 	private boolean BLACKLIST_RARES = true;
 	public static HashMap<Integer, Integer> collectionLog = new HashMap<>();
 	public boolean ignorePreFired = false;
+	private int[] scriptArgs = new int[3];
 
 	@Override
 	protected void startUp()
@@ -139,22 +137,17 @@ public class CollectionLogPlusPlugin extends Plugin
 			clientThread.invokeAtTickEnd(this::UpdatePage);
 		}
 	}
-	int[] pageStack;
-	int[] listStack;
+
 	@Subscribe
 	public void onScriptPreFired(ScriptPreFired scriptPreFired)
 	{
 		if (ignorePreFired)
 		{
 			ignorePreFired = false;
-			return;
 		}
-		if(scriptPreFired.getScriptId() == COLLECTION_DRAW_LOG_SCRIPT_ID)
+		else if(scriptPreFired.getScriptId() == COLLECTION_DRAW_LOG_SCRIPT_ID)
 		{
-			log.debug("fired!!!!1");
-			pageStack = client.getIntStack().clone();
-			for (int i = 0; i < 3; i++)
-				log.debug(String.valueOf(pageStack[i]) + ", ");
+			scriptArgs = Arrays.copyOfRange(client.getIntStack(), 0, 3);
 		}
 //		} else if (scriptPreFired.getScriptId() == 2389) {
 //			listStack = client.getIntStack().clone();
@@ -163,13 +156,13 @@ public class CollectionLogPlusPlugin extends Plugin
 //		}
 	}
 
-	@Subscribe
-	public void onWidgetClosed(WidgetClosed widgetClosed)
-	{
-		if(widgetClosed.getGroupId() != WidgetID.COLLECTION_LOG_ID)
-			return;
-		log.debug("collection log closed!");
-	}
+//	@Subscribe
+//	public void onWidgetClosed(WidgetClosed widgetClosed)
+//	{
+//		if(widgetClosed.getGroupId() != WidgetID.COLLECTION_LOG_ID)
+//			return;
+//		log.debug("collection log closed!");
+//	}
 
 	@Provides
 	CollectionLogPlusConfig provideConfig(ConfigManager configManager)
@@ -190,7 +183,6 @@ public class CollectionLogPlusPlugin extends Plugin
 			case "removejars":
 			case "completedColor":
 			default:
-//				clientThread.invoke(this::refreshPage);
 				clientThread.invoke(this::refreshList);
 				break;
 		}
@@ -200,13 +192,14 @@ public class CollectionLogPlusPlugin extends Plugin
 	public void refreshPage()
 	{
 
-		Widget collectionLog = client.getWidget(621, 0);
+//		Widget collectionLog = client.getWidget(621, 0);
+		Widget collectionLog = client.getWidget(WidgetInfo.COLLECTION_LOG);
 		if(collectionLog == null || collectionLog.isHidden())
 			return;
 
 		ignorePreFired = true;
 //		tabEnumId, pagestructid, child num
-		client.runScript(COLLECTION_DRAW_LOG_SCRIPT_ID, pageStack[0], pageStack[1], pageStack[2]);
+		client.runScript(COLLECTION_DRAW_LOG_SCRIPT_ID, scriptArgs[0], scriptArgs[1], scriptArgs[2]);
 //		initializeCollectionLog();
 //		UpdatePage();
 	}
@@ -406,11 +399,21 @@ public class CollectionLogPlusPlugin extends Plugin
 				int itemId = child.getItemId();
 
 				// item is made from a component that is not in the collection log
-				if(CollectionLogPlusData.FUSED.containsKey(itemId))
-					itemId = CollectionLogPlusData.FUSED.get(itemId);
-
-				// if the item is in the collection log, but it is not counted -> count it
-				if(collectionLog.containsKey(itemId))
+				if(CollectionLogPlusData.FUSED.containsKey(itemId)) {
+					Integer[] components = CollectionLogPlusData.FUSED.get(itemId);
+					for(Integer item : components)
+					{
+						// if the item is in the collection log, but it is not counted -> count it
+						if(collectionLog.containsKey(item))
+						{
+							if(collectionLog.get(item) <= child.getItemQuantity())
+							{
+								collectionLog.put(item, child.getItemQuantity());
+							}
+						}
+					}
+				}
+				else if(collectionLog.containsKey(itemId))
 				{
 					if(collectionLog.get(itemId) <= child.getItemQuantity())
 					{
