@@ -1,4 +1,4 @@
-package com.sensible;
+package com.collectionlogplus;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -10,7 +10,7 @@ public class DataHandler {
     public static void Serialize(HashMap<Integer, Integer> hashMap, long hash, String fileName)
     {
         String accountHash = String.valueOf(hash);
-        File playerData = new File(SensiblePlugin.MY_DATA, accountHash + "-" + fileName);
+        File playerData = new File(CollectionLogPlusPlugin.COLLECTIONLOGPLUS_DIR, accountHash + "-" + fileName);
         try {
             playerData.delete();
             playerData.createNewFile();
@@ -28,7 +28,7 @@ public class DataHandler {
     {
         HashMap<Integer, Integer> hashMap;
         String accountHash = String.valueOf(hash);
-        File playerData = new File(SensiblePlugin.MY_DATA, accountHash + "-" + fileName);
+        File playerData = new File(CollectionLogPlusPlugin.COLLECTIONLOGPLUS_DIR, accountHash + "-" + fileName);
         if(playerData.exists())
         {
             try {

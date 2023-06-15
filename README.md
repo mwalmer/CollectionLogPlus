@@ -1,2 +1,2 @@
-# Sensible
-A sensible plugin
+# Collection Log Plus
+QoL customizations

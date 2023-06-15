@@ -1,13 +1,13 @@
-package com.sensible;
+package com.collectionlogplus;
 
 import net.runelite.client.RuneLite;
 import net.runelite.client.externalplugins.ExternalPluginManager;
 
-public class SensiblePluginTest
+public class CollectionLogPlusPluginTest
 {
 	public static void main(String[] args) throws Exception
 	{
-		ExternalPluginManager.loadBuiltin(SensiblePlugin.class);
+		ExternalPluginManager.loadBuiltin(CollectionLogPlusPlugin.class);
 		RuneLite.main(args);
 	}
 }
