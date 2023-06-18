@@ -1,11 +1,11 @@
 package com.collectionlogplus;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.inject.Provides;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.events.*;
+import net.runelite.api.widgets.ItemQuantityMode;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetID;
 import net.runelite.api.widgets.WidgetInfo;
@@ -23,7 +23,9 @@ import java.util.*;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Collection Log Plus"
+	name = "Collection Log Plus",
+	description = "Lets banked items be counted in the collection log",
+	tags = {"collection", "log"}
 )
 public class CollectionLogPlusPlugin extends Plugin
 {
@@ -32,6 +34,7 @@ public class CollectionLogPlusPlugin extends Plugin
 
 	@Inject
 	private ClientThread clientThread;
+
 	@Inject
 	private ConfigManager configManager;
 
@@ -41,30 +44,35 @@ public class CollectionLogPlusPlugin extends Plugin
 	@Inject
 	private CollectionLogPlusConfig config;
 
-	public HashSet<String> pages = new HashSet<>();
+	public HashMap<String, PageStatus> pages = new HashMap();
 	public static final File COLLECTIONLOGPLUS_DIR = new File(RuneLite.RUNELITE_DIR, "CollectionLogPlus");
 
 	private long accountHash = -1;
 	private final int COLLECTION_DRAW_LOG_SCRIPT_ID = 2732;
 	private final int STATUS_UNKNOWN = -1;
 	private final int STATUS_NOT_OBTAINED = 0;
-	private boolean BLACKLIST_PETS = true;
-	private boolean BLACKLIST_JARS = true;
-	private boolean BLACKLIST_RARES = true;
-	public static HashMap<Integer, Integer> collectionLog = new HashMap<>();
+	private enum PageStatus {
+		MISSING,
+		NOT_COMPLETED,
+		COMPLETED
+	};
+
+	public static HashMap<Integer, ItemData> collectionLog = new HashMap<>();
+	public static HashMap<Integer, Integer> seenInventories = new HashMap<>();
 	public boolean ignorePreFired = false;
 	private int[] scriptArgs = new int[3];
+	private final int DEFAULT_TEXT_COLOR = 0xff981f;
 
 	@Override
 	protected void startUp()
 	{
-		loadCollectionLogFromFile();
+		loadDataFromFile();
 	}
 
 	@Override
 	protected void shutDown()
 	{
-		saveCollectionLogToFile();
+		saveDataToFile();
 	}
 
 	@Subscribe
@@ -73,26 +81,28 @@ public class CollectionLogPlusPlugin extends Plugin
 		if(gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			accountHash = client.getAccountHash();
-			loadCollectionLogFromFile();
+			loadDataFromFile();
 		}
 		else if(gameStateChanged.getGameState() == GameState.HOPPING || gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
 		{
-			saveCollectionLogToFile();
-			//todo: does account hash need to be set to -1 here? does hopping trigger logged_in event?
+			saveDataToFile();
 		}
 	}
 
-	public void saveCollectionLogToFile()
+	public void saveDataToFile()
 	{
 		if(collectionLog == null)
 			return;
 		if(accountHash == -1)
+		{
 			return;
+		}
 
 		DataHandler.Serialize(collectionLog, accountHash, "collection-log");
+		DataHandler.Serialize(seenInventories, accountHash, "config");
 	}
 
-	public void loadCollectionLogFromFile()
+	public void loadDataFromFile()
 	{
 		if(client.getGameState() == GameState.LOGGED_IN)
 		{
@@ -105,23 +115,15 @@ public class CollectionLogPlusPlugin extends Plugin
 
 		if(accountHash == -1)
 		{
-			log.debug("something went wrong, you need to login!");
 			collectionLog = null;
 			return;
 		}
 
 		collectionLog = DataHandler.Deserialize(accountHash, "collection-log");
+		seenInventories = DataHandler.Deserialize(accountHash, "config");
+		if(seenInventories == null)
+			seenInventories = new HashMap<>();
 	}
-
-//	@Subscribe
-//	public void onWidgetLoaded(WidgetLoaded widgetLoaded)
-//	{
-//		int widgetID = widgetLoaded.getGroupId();
-//		if(widgetID != WidgetID.COLLECTION_LOG_ID)
-//			return;
-//
-//		initializeCollectionLog();
-//	}
 
 	@Subscribe
 	public void onScriptPostFired(ScriptPostFired scriptPostFired)
@@ -133,7 +135,7 @@ public class CollectionLogPlusPlugin extends Plugin
 		else if(scriptPostFired.getScriptId() == COLLECTION_DRAW_LOG_SCRIPT_ID)
 		{
 			initializeCollectionLog();
-			clientThread.invokeAtTickEnd(this::UpdateText);
+			clientThread.invokeAtTickEnd(this::UpdateListText);
 			clientThread.invokeAtTickEnd(this::UpdatePage);
 		}
 	}
@@ -149,25 +151,6 @@ public class CollectionLogPlusPlugin extends Plugin
 		{
 			scriptArgs = Arrays.copyOfRange(client.getIntStack(), 0, 3);
 		}
-//		} else if (scriptPreFired.getScriptId() == 2389) {
-//			listStack = client.getIntStack().clone();
-//			for(int i = 0; i < 3; i++)
-//				log.debug(String.valueOf(listStack[i]) + ", ");
-//		}
-	}
-
-//	@Subscribe
-//	public void onWidgetClosed(WidgetClosed widgetClosed)
-//	{
-//		if(widgetClosed.getGroupId() != WidgetID.COLLECTION_LOG_ID)
-//			return;
-//		log.debug("collection log closed!");
-//	}
-
-	@Provides
-	CollectionLogPlusConfig provideConfig(ConfigManager configManager)
-	{
-		return configManager.getConfig(CollectionLogPlusConfig.class);
 	}
 
 	@Subscribe
@@ -179,44 +162,44 @@ public class CollectionLogPlusPlugin extends Plugin
 			case "hidejars":
 				clientThread.invoke(this::refreshPage);
 				break;
-			case "removepets":
-			case "removejars":
-			case "completedColor":
-			default:
+			case "includeBanked":
+				clientThread.invoke(this::refreshPage);
 				clientThread.invoke(this::refreshList);
 				break;
+			case "removepets":
+			case "removejars":
+				clientThread.invoke(this::refreshList);
+				break;
+			default:
+				break;
 		}
+	}
 
+	@Provides
+	CollectionLogPlusConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(CollectionLogPlusConfig.class);
 	}
 
 	public void refreshPage()
 	{
-
-//		Widget collectionLog = client.getWidget(621, 0);
 		Widget collectionLog = client.getWidget(WidgetInfo.COLLECTION_LOG);
 		if(collectionLog == null || collectionLog.isHidden())
 			return;
 
 		ignorePreFired = true;
-//		tabEnumId, pagestructid, child num
+		// tabEnumId, pagestructid, child num
 		client.runScript(COLLECTION_DRAW_LOG_SCRIPT_ID, scriptArgs[0], scriptArgs[1], scriptArgs[2]);
-//		initializeCollectionLog();
-//		UpdatePage();
 	}
 
 	public void refreshList()
 	{
-
-		Widget collectionLog = client.getWidget(621, 0);
+		Widget collectionLog = client.getWidget(WidgetInfo.COLLECTION_LOG);
 		if(collectionLog == null || collectionLog.isHidden())
 			return;
 
-		ignorePreFired = true;
-//		tabEnumId, pagestructid, child num
-//		client.runScript(2389, listStack[0]);
-//
 		clientThread.invokeAtTickEnd(this::initializeCollectionLog);
-		clientThread.invokeAtTickEnd(this::UpdateText);
+		clientThread.invokeAtTickEnd(this::UpdateListText);
 	}
 
 	private void initializeCollectionLog()
@@ -252,51 +235,65 @@ public class CollectionLogPlusPlugin extends Plugin
 					int itemId = itemComposition.getId();
 					if(!collectionLog.containsKey(itemId))
 					{
-						collectionLog.put(itemId, STATUS_UNKNOWN);
+						collectionLog.put(itemId, new ItemData(STATUS_UNKNOWN, 0, 0));
 						validPage = false;
 					}
 					else
 					{
+						boolean isPet = CollectionLogPlusData.PETS.contains(itemId);
+						boolean isJar = CollectionLogPlusData.JARS.contains(itemId);
 						// blacklists the "All Pets" tab as pets always need to be obtained to complete it
-						if(config.petsDisabled() && CollectionLogPlusData.PETS.contains(itemId) && !pageName.equals("All Pets"))
-						{
+						if((config.petsDisabled() && isPet && !pageName.equals("All Pets")) || (config.jarsDisabled() && isJar))
+							continue;
 
-						}
-						else if(config.jarsDisabled() && CollectionLogPlusData.JARS.contains(itemId))
-						{
+						neededItems++;
+						ItemData itemData = collectionLog.get(itemId);
 
-						}
-						else
+						int itemQuantity = itemData.collectionLogCount + itemData.addedCount;
+						if(config.includeBanked())
 						{
-							neededItems++;
-							if(collectionLog.get(itemId) > 0)
-							{
-								obtainedItems++;
-							}
+							itemQuantity = Math.max(itemData.collectionLogCount, itemData.storedCount) + itemData.addedCount;
+						}
+
+						if(itemQuantity > 0)
+						{
+							obtainedItems++;
+						}
+						else if(itemData.collectionLogCount == -1)
+						{
+							validPage = false;
 						}
 					}
 				}
 
-				if(validPage && obtainedItems >= neededItems)
+				if(validPage)
 				{
-					pages.add(pageName);
+					if(obtainedItems >= neededItems)
+					{
+						pages.put(pageName, PageStatus.COMPLETED);
+					}
+					else
+					{
+						pages.put(pageName, PageStatus.NOT_COMPLETED);
+					}
 				}
 				else
 				{
-					pages.remove(pageName);
+					pages.put(pageName, PageStatus.MISSING);
 				}
 			}
 		}
 
 	}
 
-	public void UpdateText()
+	public void UpdateListText()
 	{
-		int[] tabs = {12, 16, 32, 35, 34};
+		// bosses, raids, clues, minigames, other
+		int[] lists = {12, 16, 32, 35, 34};
 		Widget logList = null;
-		for(int tabId : tabs)
+		for(int listId : lists)
 		{
-			logList = client.getWidget(621, tabId);
+			logList = client.getWidget(WidgetID.COLLECTION_LOG_ID, listId);
 			if(logList != null && !logList.isHidden())
 				break;
 		}
@@ -309,47 +306,71 @@ public class CollectionLogPlusPlugin extends Plugin
 		{
 			Widget child = children[i];
 			String pageName = child.getText();
-			if(pages.contains(pageName))
+			PageStatus pageStatus = pages.get(pageName);
+			if(pageStatus == null)
 			{
-				child.setTextColor(config.completedColor().getRGB());
+				child.setTextColor(DEFAULT_TEXT_COLOR);
+			}
+			else if (pageStatus == PageStatus.MISSING)
+			{
+				child.setTextColor(DEFAULT_TEXT_COLOR);
+				child.setText(child.getText() + "*");
+			}
+			else if(pageStatus == PageStatus.NOT_COMPLETED)
+			{
+				child.setTextColor(DEFAULT_TEXT_COLOR);
 			}
 			else
 			{
-				child.setTextColor(0xff981f);
+				child.setTextColor(config.completedColor().getRGB());
 			}
+
 			child.revalidate();
 		}
 	}
 
 	private void UpdatePage()
 	{
-		Widget widget = client.getWidget(621, 36);
+		Widget widget = client.getWidget(WidgetID.COLLECTION_LOG_ID, 36);
 		if(widget == null || widget.getChildren() == null)
 			return;
 
-		// blacklist's the 'All Pets' tab because pets should still show up there even if hidden;
-		Widget header = client.getWidget(621, 19);
-		if(header != null && header.getChildren() != null && header.getChildren()[0].getText().equals("All Pets"))
-			return;
-
+		int needed = 0;
+		int obtained = 0;
 		Widget[] children = widget.getChildren();
 		for(int i = 0; i < children.length; i++)
 		{
 			Widget child = widget.getChild(i);
 			int itemId = child.getItemId();
+			// This makes sure that the widget id equals the collection log id
 			if(CollectionLogPlusData.MISSING_WIDGET_IDS.containsKey(itemId))
 				itemId = CollectionLogPlusData.MISSING_WIDGET_IDS.get(itemId);
 
 			if(collectionLog.containsKey(itemId))
 			{
-				int itemQuantity = collectionLog.get(itemId);
-				if(itemQuantity < child.getItemQuantity() && child.getOpacity() == 0)
+				ItemData itemData = collectionLog.get(itemId);
+
+				// updates the collection log count, placeholder items in widgets have an item quantity of 1 so they
+				// have to be set to zero manually
+				itemData.collectionLogCount = 0;
+				if(child.getItemQuantityMode() != 0 && child.getOpacity() == 0)
 				{
-					collectionLog.put(itemId, child.getItemQuantity());
-					itemQuantity = child.getItemQuantity();
+					itemData.collectionLogCount = child.getItemQuantity();
+				}
+				collectionLog.put(itemId, itemData);
+
+				int itemQuantity = itemData.collectionLogCount + itemData.addedCount;
+				if(config.includeBanked())
+				{
+					itemQuantity = Math.max(itemData.collectionLogCount, itemData.storedCount) + itemData.addedCount;
 				}
 
-				if((config.hidePets() && CollectionLogPlusData.PETS.contains(itemId)) ||
+				// blacklist's the 'All Pets' tab because pets should still show up there even if hidden;
+				int ENTRY_HEADER = 19;
+				Widget header = client.getWidget(WidgetID.COLLECTION_LOG_ID, ENTRY_HEADER);
+				boolean isAllPetsTab = header != null && header.getChildren() != null && header.getChildren()[0].getText().equals("All Pets");
+
+				if((config.hidePets() && CollectionLogPlusData.PETS.contains(itemId) && !isAllPetsTab) ||
 				   (config.hideJars() && CollectionLogPlusData.JARS.contains(itemId)))
 				{
 					if(child.isHidden())
@@ -366,21 +387,40 @@ public class CollectionLogPlusPlugin extends Plugin
 				}
 				else if(itemQuantity > 0)
 				{
+					obtained++;
+					needed++;
 					child.setOpacity(0);
 					child.setItemQuantity(itemQuantity);
-					//TODO: figure out difference between quantity 2 and 1 and 0
-					child.setItemQuantityMode(2);
+					child.setItemQuantityMode(ItemQuantityMode.STACKABLE);
+				}
+				else
+				{
+					needed++;
 				}
 
 			}
 
 			child.revalidate();
 		}
+
+		if(obtained >= needed)
+		{
+			Widget header = client.getWidget(WidgetInfo.COLLECTION_LOG_ENTRY_HEADER);
+			if(header == null || header.getChildren() == null)
+				return;
+			Widget obtainedText = header.getChildren()[1];
+			obtainedText.setText("Obtained: <col=" + Integer.toHexString(config.completedColor().getRGB() - 0xff000000) + ">"+ obtained + "/" + needed+"</col>");
+			obtainedText.setOriginalWidth(obtainedText.getWidth() + 6);
+			obtainedText.revalidate();
+		}
+
 	}
 
 	public void SearchForMissingItems(WidgetInfo widgetInfo, InventoryID id)
 	{
-		//TODO: maybe init cl/fused here?
+		if(!config.includeBanked() || seenInventories.containsKey(id.getId()))
+			return;
+
 		if(collectionLog == null)
 			return;
 
@@ -389,6 +429,8 @@ public class CollectionLogPlusPlugin extends Plugin
 
 		if(itemContainer == null || widget == null || widget.getChildren() == null)
 			return;
+
+		seenInventories.put(id.getId(), 1);
 
 		Widget[] children = widget.getChildren();
 		for(int i = 0; i < itemContainer.size(); i++)
@@ -399,25 +441,30 @@ public class CollectionLogPlusPlugin extends Plugin
 				int itemId = child.getItemId();
 
 				// item is made from a component that is not in the collection log
-				if(CollectionLogPlusData.FUSED.containsKey(itemId)) {
+				if(CollectionLogPlusData.FUSED.containsKey(itemId))
+				{
+//					log.debug("contains key");
+//					log.debug(child.getName());
+//					log.debug("" + child.getItemQuantity());
 					Integer[] components = CollectionLogPlusData.FUSED.get(itemId);
-					for(Integer item : components)
+					for(Integer component : components)
 					{
 						// if the item is in the collection log, but it is not counted -> count it
-						if(collectionLog.containsKey(item))
+						if(collectionLog.containsKey(component))
 						{
-							if(collectionLog.get(item) <= child.getItemQuantity())
-							{
-								collectionLog.put(item, child.getItemQuantity());
-							}
+							ItemData itemData = collectionLog.get(component);
+							itemData.storedCount += child.getItemQuantity();
+							collectionLog.put(component, itemData);
 						}
 					}
 				}
 				else if(collectionLog.containsKey(itemId))
 				{
-					if(collectionLog.get(itemId) <= child.getItemQuantity())
+					ItemData itemData = collectionLog.get(itemId);
+					if(child.getOpacity() == 0)
 					{
-						collectionLog.put(itemId, child.getItemQuantity());
+						itemData.storedCount += child.getItemQuantity();
+						collectionLog.put(itemId, itemData);
 					}
 				}
 			}

@@ -1,7 +1,6 @@
 package com.collectionlogplus;
 
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.Item;
 import net.runelite.api.ItemID;
 
 import java.util.HashMap;
@@ -204,7 +203,6 @@ public class CollectionLogPlusData {
       FUSED.put(ItemID.SPIRIT_ANGLER_TOP, new Integer[]{ ItemID.ANGLER_TOP, ItemID.SPIRIT_FLAKES });
       FUSED.put(ItemID.SPIRIT_ANGLER_WADERS, new Integer[]{ ItemID.ANGLER_WADERS, ItemID.SPIRIT_FLAKES });
       FUSED.put(ItemID.SPIRIT_ANGLER_BOOTS, new Integer[]{ ItemID.ANGLER_BOOTS, ItemID.SPIRIT_FLAKES });
-      FUSED.put(ItemID.ELITE_VOID_TOP, new Integer[]{ ItemID.VOID_KNIGHT_TOP });
       FUSED.put(ItemID.ZENYTE_RING, new Integer[]{ ItemID.ZENYTE_SHARD });
       FUSED.put(ItemID.RING_OF_SUFFERING, new Integer[]{ ItemID.ZENYTE_SHARD });
       FUSED.put(ItemID.ZENYTE_NECKLACE, new Integer[]{ ItemID.ZENYTE_SHARD });
@@ -213,5 +211,7 @@ public class CollectionLogPlusData {
       FUSED.put(ItemID.TORMENTED_BRACELET, new Integer[]{ ItemID.ZENYTE_SHARD });
       FUSED.put(ItemID.ZENYTE_AMULET, new Integer[]{ ItemID.ZENYTE_SHARD });
       FUSED.put(ItemID.AMULET_OF_TORTURE, new Integer[]{ ItemID.ZENYTE_SHARD });
+
+      FUSED.put(ItemID.RAW_TUNA, new Integer[]{ItemID.DRAGON_AXE});
    }
 }

@@ -11,10 +11,21 @@ import java.awt.*;
 public interface CollectionLogPlusConfig extends Config
 {
 	@ConfigItem(
+			keyName = "includeBanked",
+			name = "Included Banked Items",
+			description = "Banked items will be added to the collection log.",
+			position = 1
+	)
+	default boolean includeBanked()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "removepets",
 		name = "Remove Pets",
 		description = "",
-		position = 1
+		position = 2
 	)
 	default boolean petsDisabled()
 	{
@@ -25,19 +36,18 @@ public interface CollectionLogPlusConfig extends Config
 			keyName = "removejars",
 			name = "Remove Jars",
 			description = "",
-			position = 2
+			position = 3
 	)
 	default boolean jarsDisabled()
 	{
 		return true;
 	}
 
-	@Alpha
 	@ConfigItem(
 			keyName = "completedcolor",
 			name = "Completed Color",
 			description = "",
-			position = 3
+			position = 4
 	)
 	default Color completedColor()
 	{
@@ -48,7 +58,7 @@ public interface CollectionLogPlusConfig extends Config
 			keyName = "hidepets",
 			name = "Hide Pets",
 			description = "",
-			position = 4
+			position = 5
 	)
 	default boolean hidePets()
 	{
@@ -59,7 +69,7 @@ public interface CollectionLogPlusConfig extends Config
 			keyName = "hidejars",
 			name = "Hide Jars",
 			description = "",
-			position = 5
+			position = 6
 	)
 	default boolean hideJars()
 	{
